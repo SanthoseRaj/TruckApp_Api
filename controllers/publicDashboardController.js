@@ -12,10 +12,12 @@ const routeKeys = {
 const normalizeText = (value) => value?.toString().toLowerCase().trim();
 
 const hasUpdate = (truckEntry, stop, status) =>
-  truckEntry.updates.some((update) => normalizeText(update.stop) === stop && normalizeText(update.status) === status);
+  (truckEntry.updates || []).some(
+    (update) => normalizeText(update.stop) === stop && normalizeText(update.status) === status
+  );
 
 const getLatestUpdate = (truckEntry) => {
-  if (!truckEntry.updates.length) return null;
+  if (!truckEntry.updates?.length) return null;
 
   return [...truckEntry.updates].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt)).at(-1);
 };
@@ -30,25 +32,42 @@ const getWorkflowStatus = (truckEntry) => {
     (stop) => hasUpdate(truckEntry, stop, 'entry') && hasUpdate(truckEntry, stop, 'exit')
   );
 
-  return completed ? 'completed' : 'pending';
+  return completed ? 'completed' : 'active';
+};
+
+const getTruckIdentity = (truckEntry) => {
+  const head = normalizeText(truckEntry.headTruckNumber) || '';
+  const tail = normalizeText(truckEntry.tailTrailerNumber) || '';
+
+  return `${head}|${tail}`;
 };
 
 const serializePublicTruckEntry = (truckEntry) => {
-  const latestUpdate = getLatestUpdate(truckEntry);
+  const entry = truckEntry.toObject ? truckEntry.toObject() : truckEntry;
+  const latestUpdate = getLatestUpdate(entry);
   const currentStop = normalizeText(latestUpdate?.stop) || null;
-  const currentStatus = normalizeText(latestUpdate?.status) || null;
+  const workflowStatus = getWorkflowStatus(entry);
+  const currentStatus = workflowStatus === 'completed' ? 'completed' : normalizeText(latestUpdate?.status) || null;
 
   return {
-    _id: truckEntry._id,
-    headTruckNumber: truckEntry.headTruckNumber,
-    tailTrailerNumber: truckEntry.tailTrailerNumber,
-    supplierName: truckEntry.supplierName,
-    shipName: truckEntry.shipName,
-    shipNumber: truckEntry.shipNumber,
-    tripNumber: truckEntry.tripNumber,
-    tripTime: truckEntry.tripTime,
-    truckModel: truckEntry.truckModel,
-    updates: truckEntry.updates.map((update) => {
+    _id: entry._id,
+    headTruckNumber: entry.headTruckNumber,
+    tailTrailerNumber: entry.tailTrailerNumber,
+    supplierName: entry.supplierName,
+    shipId: entry.shipId,
+    shipName: entry.shipName,
+    shipNumber: entry.shipNumber,
+    tripNumber: entry.tripNumber,
+    tripTime: entry.tripTime,
+    driverName: entry.driverName,
+    driverMobile: entry.driverMobile,
+    driverTdCardNumber: entry.driverTdCardNumber,
+    truckModel: entry.truckModel,
+    currentStop,
+    currentStatus,
+    nextStop: workflowStatus === 'completed' ? null : getNextStop(currentStop),
+    workflowStatus,
+    updates: (entry.updates || []).map((update) => {
       const selectedAt = formatSelectedLocalDateTime(update.updatedAt);
       const status = normalizeText(update.status);
 
@@ -56,14 +75,13 @@ const serializePublicTruckEntry = (truckEntry) => {
         stop: normalizeText(update.stop),
         status,
         updatedAt: selectedAt,
+        teamName: update.teamName,
+        memberName: update.memberName,
         crossedAt: selectedAt,
         ...(status === 'entry' ? { entryAt: selectedAt } : {}),
         ...(status === 'exit' ? { exitAt: selectedAt } : {}),
       };
     }),
-    currentStop,
-    currentStatus,
-    workflowStatus: getWorkflowStatus(truckEntry),
   };
 };
 
@@ -86,17 +104,16 @@ const buildDashboardCounts = (truckEntries) => {
     },
   };
 
+  const activeTruckIdentities = new Set();
+
   truckEntries.forEach((truckEntry) => {
     if (truckEntry.workflowStatus === 'completed') return;
 
-    counts.totalActive += 1;
-
     if (truckEntry.currentStatus === 'entry' && truckEntry.currentStop in counts.stops) {
       counts.stops[truckEntry.currentStop] += 1;
-      return;
     }
 
-    if (truckEntry.currentStatus === 'exit') {
+    if (truckEntry.currentStatus === 'exit' || truckEntry.currentStatus === 'moving') {
       const routeKey = routeKeys[truckEntry.currentStop];
       const nextStop = getNextStop(truckEntry.currentStop);
 
@@ -105,20 +122,33 @@ const buildDashboardCounts = (truckEntries) => {
         counts.moving += 1;
       }
     }
+
+    activeTruckIdentities.add(getTruckIdentity(truckEntry));
   });
+
+  counts.totalActive = activeTruckIdentities.size;
 
   return counts;
 };
 
 const getPublicDashboardTruckEntries = async (req, res, next) => {
   try {
-    const truckEntries = await TruckEntry.find().sort('-createdAt');
+    const truckEntries = await TruckEntry.find({
+      isDeleted: { $ne: true },
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }],
+    }).sort('-createdAt');
     const publicTruckEntries = truckEntries.map(serializePublicTruckEntry);
-    const activeTruckEntries = publicTruckEntries.filter((truckEntry) => truckEntry.workflowStatus !== 'completed');
+    const counts = buildDashboardCounts(publicTruckEntries);
+
+    console.log(
+      `[public-dashboard] entries=${publicTruckEntries.length} active=${counts.totalActive} moving=${counts.moving}`
+    );
+
+    res.set('Cache-Control', 'no-store');
 
     return res.status(200).json({
-      counts: buildDashboardCounts(publicTruckEntries),
-      truckEntries: activeTruckEntries,
+      counts,
+      truckEntries: publicTruckEntries,
     });
   } catch (error) {
     next(error);
@@ -127,4 +157,6 @@ const getPublicDashboardTruckEntries = async (req, res, next) => {
 
 module.exports = {
   getPublicDashboardTruckEntries,
+  buildDashboardCounts,
+  serializePublicTruckEntry,
 };
