@@ -50,6 +50,10 @@ These users are seeded automatically on server start if they do not already exis
 - `GET /api/auth/entry-teams`
 - `POST /api/auth/admins`
 - `POST /api/auth/members`
+- `GET /api/auth/members`
+- `GET /api/auth/members/:id`
+- `PUT /api/auth/members/:id`
+- `DELETE /api/auth/members/:id`
 - `POST /api/trucks`
 - `GET /api/trucks`
 - `GET /api/trucks/:id`

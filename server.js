@@ -10,8 +10,11 @@ const swaggerSpec = require('./config/swagger');
 const seedUsers = require('./utils/seedUsers');
 const authRoutes = require('./routes/authRoutes');
 const truckRoutes = require('./routes/truckRoutes');
+const shipRoutes = require('./routes/shipRoutes');
+const truckEntryRoutes = require('./routes/truckEntryRoutes');
 const tripRoutes = require('./routes/tripRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const publicRoutes = require('./routes/publicRoutes');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
@@ -71,8 +74,11 @@ app.use(
 );
 app.use('/api/auth', authRoutes);
 app.use('/api/trucks', truckRoutes);
+app.use('/api/ships', shipRoutes);
+app.use('/api/truck-entries', truckEntryRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/public', publicRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
