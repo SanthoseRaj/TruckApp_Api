@@ -1,0 +1,94 @@
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
+
+const connectDB = require('./config/db');
+const swaggerSpec = require('./config/swagger');
+const seedUsers = require('./utils/seedUsers');
+const authRoutes = require('./routes/authRoutes');
+const truckRoutes = require('./routes/truckRoutes');
+const tripRoutes = require('./routes/tripRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
+
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Truck Tracking Backend API is running',
+    docs: '/api-docs',
+  });
+});
+
+app.use(
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      requestInterceptor: (request) => {
+        const token = window.localStorage.getItem('truckTrackingJwt');
+        const isLoginRequest = request.url.endsWith('/api/auth/login');
+
+        if (token && !isLoginRequest) {
+          request.headers.Authorization = `Bearer ${token}`;
+        }
+
+        return request;
+      },
+      responseInterceptor: (response) => {
+        const isLoginResponse = response.url.endsWith('/api/auth/login') && response.status === 200;
+
+        if (isLoginResponse && response.text) {
+          try {
+            const body = JSON.parse(response.text);
+
+            if (body.token) {
+              window.localStorage.setItem('truckTrackingJwt', body.token);
+
+              if (window.ui && window.ui.preauthorizeApiKey) {
+                window.ui.preauthorizeApiKey('bearerAuth', body.token);
+              }
+            }
+          } catch (error) {
+            console.warn('Unable to read login token from Swagger response');
+          }
+        }
+
+        return response;
+      },
+    },
+  })
+);
+app.use('/api/auth', authRoutes);
+app.use('/api/trucks', truckRoutes);
+app.use('/api/trips', tripRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
+
+const startServer = async () => {
+  try {
+    await connectDB();
+    await seedUsers();
+    app.listen(PORT, () => {
+      console.log(`Server URL: http://localhost:${PORT}`);
+      console.log(`Swagger URL: http://localhost:${PORT}/api-docs`);
+    });
+  } catch (error) {
+    console.error(`Failed to start server: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+startServer();
