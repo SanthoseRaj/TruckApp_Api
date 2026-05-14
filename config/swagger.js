@@ -159,18 +159,52 @@ const swaggerOptions = {
           type: 'object',
           properties: {
             id: { type: 'string' },
-            shipName: { type: 'string', example: 'MV Gulf Falcon' },
-            shipNumber: { type: 'string', example: 'SHIP-1001' },
+            shipName: { type: 'string', example: 'MV Midway Spirit' },
+            shipNumber: { type: 'string', example: '' },
+            quantityOfCargoOnBoard: { type: 'number', example: 30000 },
+            eta: { type: 'string', example: '2026-05-14' },
+            atb: { type: 'string', example: '2026-05-15' },
+            dailyDischargeRate: { type: 'number', example: 5000 },
+            etcDays: { type: 'number', nullable: true, example: 6 },
+            completionDate: { type: 'string', nullable: true, example: '2026-05-21T00:00:00.000Z' },
+            isActive: { type: 'boolean', example: true },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
         ShipInput: {
           type: 'object',
-          required: ['shipName', 'shipNumber'],
+          required: ['shipName', 'quantityOfCargoOnBoard', 'eta', 'atb', 'dailyDischargeRate'],
           properties: {
-            shipName: { type: 'string', example: 'MV Gulf Falcon' },
-            shipNumber: { type: 'string', example: 'SHIP-1001' },
+            shipName: { type: 'string', example: 'MV Midway Spirit' },
+            shipNumber: { type: 'string', example: '' },
+            quantityOfCargoOnBoard: { type: 'number', example: 30000 },
+            eta: { type: 'string', example: '2026-05-14' },
+            atb: { type: 'string', example: '2026-05-15' },
+            dailyDischargeRate: { type: 'number', example: 5000 },
+            isActive: { type: 'boolean', example: true },
+          },
+        },
+        Driver: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            driverName: { type: 'string', example: 'Ali Mohammed' },
+            mobileNumber: { type: 'string', example: '+96893307711' },
+            idNumber: { type: 'string', example: 'ID-11842' },
+            isActive: { type: 'boolean', example: true },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        DriverInput: {
+          type: 'object',
+          required: ['driverName', 'mobileNumber', 'idNumber'],
+          properties: {
+            driverName: { type: 'string', example: 'Ali Mohammed' },
+            mobileNumber: { type: 'string', example: '+96893307711' },
+            idNumber: { type: 'string', example: 'ID-11842' },
+            isActive: { type: 'boolean', example: true },
           },
         },
         TruckEntryUpdate: {
@@ -185,7 +219,6 @@ const swaggerOptions = {
             teamName: { type: 'string', example: 'Yard Entry Team' },
             memberName: { type: 'string', example: 'Yard Member' },
             remarks: { type: 'string', example: 'Checked and approved' },
-            destination: { type: 'string', enum: ['dubai', 'freeZone'], example: 'dubai' },
           },
         },
         TruckEntry: {
@@ -203,6 +236,10 @@ const swaggerOptions = {
             driverMobile: { type: 'string', example: '+96890011212' },
             driverTdCardNumber: { type: 'string', example: 'ID-88421' },
             truckModel: { type: 'string', enum: ['threeAxis', 'sixAxis'], example: 'sixAxis' },
+            destination: { type: 'string', enum: ['dubai', 'freeZone'], example: 'dubai' },
+            originStop: { type: 'string', enum: ['yard', 'gate'], example: 'yard' },
+            currentStop: { type: 'string', enum: ['yard', 'gate', 'port', 'clearence', 'dubai'], example: 'yard' },
+            currentStatus: { type: 'string', enum: ['entry', 'exit', 'completed'], example: 'entry' },
             updates: {
               type: 'array',
               items: { $ref: '#/components/schemas/TruckEntryUpdate' },
@@ -232,6 +269,7 @@ const swaggerOptions = {
             'driverMobile',
             'driverTdCardNumber',
             'truckModel',
+            'destination',
           ],
           properties: {
             headTruckNumber: { type: 'string', example: 'OM-TRK-1021' },
@@ -246,6 +284,8 @@ const swaggerOptions = {
             driverMobile: { type: 'string', example: '+96890011212' },
             driverTdCardNumber: { type: 'string', example: 'ID-88421' },
             truckModel: { type: 'string', enum: ['threeAxis', 'sixAxis'], example: 'sixAxis' },
+            destination: { type: 'string', enum: ['dubai', 'freeZone'], example: 'dubai' },
+            originStop: { type: 'string', enum: ['yard', 'gate'], example: 'yard' },
             entryAt: { type: 'string', format: 'date-time', example: '2026-05-13T20:27:00.000' },
           },
         },
@@ -254,12 +294,6 @@ const swaggerOptions = {
           properties: {
             entryAt: { type: 'string', format: 'date-time', example: '2026-05-13T20:27:00.000' },
             remarks: { type: 'string', example: 'Gate entry completed' },
-            destination: {
-              type: 'string',
-              enum: ['dubai', 'freeZone'],
-              example: 'dubai',
-              description: 'Required only for Dubai team entry updates. Do not send for other teams.',
-            },
           },
         },
         TruckEntryExitUpdateInput: {
@@ -267,12 +301,6 @@ const swaggerOptions = {
           properties: {
             exitAt: { type: 'string', format: 'date-time', example: '2026-05-13T21:10:00.000' },
             remarks: { type: 'string', example: 'Gate exit completed' },
-            destination: {
-              type: 'string',
-              enum: ['dubai', 'freeZone'],
-              example: 'freeZone',
-              description: 'Required only for Dubai team exit updates. Do not send for other teams.',
-            },
           },
         },
         Trip: {

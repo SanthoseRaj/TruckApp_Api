@@ -11,7 +11,7 @@ const { allowRoles } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 const truckEntryReaders = ['owner', 'admin', 'yard', 'gate', 'port', 'clearence', 'dubai'];
-const truckEntryCreators = ['owner', 'admin', 'yard'];
+const truckEntryCreators = ['owner', 'admin', 'yard', 'gate'];
 
 router.use(protect);
 
@@ -19,7 +19,7 @@ router.use(protect);
  * @swagger
  * /api/truck-entries:
  *   post:
- *     summary: Create yard truck entry
+ *     summary: Create truck entry
  *     tags: [Truck Entries]
  *     security:
  *       - bearerAuth: []
@@ -37,7 +37,7 @@ router.use(protect);
  *       404:
  *         description: Ship not found
  *       409:
- *         description: Duplicate active yard entry
+ *         description: Duplicate active truck entry
  */
 router.post('/', allowRoles(...truckEntryCreators), createTruckEntry);
 

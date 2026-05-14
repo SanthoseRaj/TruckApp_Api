@@ -9,10 +9,30 @@ const shipSchema = new mongoose.Schema(
     },
     shipNumber: {
       type: String,
-      required: [true, 'Ship number is required'],
-      unique: true,
       uppercase: true,
       trim: true,
+    },
+    quantityOfCargoOnBoard: {
+      type: Number,
+      required: [true, 'Quantity of cargo on board is required'],
+    },
+    eta: {
+      type: String,
+      required: [true, 'ETA is required'],
+      trim: true,
+    },
+    atb: {
+      type: String,
+      required: [true, 'ATB is required'],
+      trim: true,
+    },
+    dailyDischargeRate: {
+      type: Number,
+      required: [true, 'Daily discharge rate is required'],
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -26,11 +26,6 @@ const truckEntryUpdateSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    destination: {
-      type: String,
-      enum: ['dubai', 'freeZone'],
-      trim: true,
-    },
   },
   { _id: false }
 );
@@ -98,6 +93,17 @@ const truckEntrySchema = new mongoose.Schema(
       type: String,
       enum: ['threeAxis', 'sixAxis'],
       required: [true, 'Truck model is required'],
+    },
+    destination: {
+      type: String,
+      enum: ['dubai', 'freeZone'],
+      trim: true,
+    },
+    originStop: {
+      type: String,
+      enum: ['yard', 'gate'],
+      default: 'yard',
+      trim: true,
     },
     updates: [truckEntryUpdateSchema],
   },

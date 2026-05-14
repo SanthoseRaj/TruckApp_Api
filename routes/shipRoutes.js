@@ -106,6 +106,7 @@ router.get('/:id', allowRoles(...shipReaders), getShipById);
  *         description: Duplicate ship number
  */
 router.put('/:id', allowRoles(...shipManagers), updateShip);
+router.patch('/:id', allowRoles(...shipManagers), updateShip);
 
 /**
  * @swagger

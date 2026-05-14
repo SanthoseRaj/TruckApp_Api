@@ -54,6 +54,11 @@ These users are seeded automatically on server start if they do not already exis
 - `GET /api/auth/members/:id`
 - `PUT /api/auth/members/:id`
 - `DELETE /api/auth/members/:id`
+- `GET /api/drivers`
+- `GET /api/drivers/:id`
+- `POST /api/drivers`
+- `PUT /api/drivers/:id`
+- `DELETE /api/drivers/:id`
 - `POST /api/trucks`
 - `GET /api/trucks`
 - `GET /api/trucks/:id`

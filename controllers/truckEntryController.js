@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Ship = require('../models/Ship');
 const TruckEntry = require('../models/TruckEntry');
+const { normalizeDestination } = require('../utils/destination');
 const {
   formatSelectedLocalDateTime,
   parseSelectedLocalDateTime,
@@ -25,17 +26,27 @@ const requiredFields = [
 const stringFields = requiredFields.filter((field) => field !== 'tripTime');
 const adminRoles = ['owner', 'admin'];
 const workflowStops = ['yard', 'gate', 'port', 'clearence', 'dubai'];
+const originStops = ['yard', 'gate'];
 
 const normalizeUpper = (value) => value.trim().toUpperCase();
 const normalizeText = (value) => value?.toLowerCase().trim();
 
-const normalizeDubaiDestination = (destination) => {
-  const normalized = destination?.toString().trim().toLowerCase();
+const isValidOriginStop = (originStop) => originStop === undefined || originStops.includes(originStop);
+const normalizeOriginStop = (originStop) => {
+  if (originStop === undefined) return undefined;
+  if (originStop === null) return null;
+  return originStop.toString().trim().toLowerCase();
+};
+const getOriginStop = (truckEntry) => truckEntry.originStop || 'yard';
+const getWorkflowStops = (truckEntry) => {
+  const originIndex = workflowStops.indexOf(getOriginStop(truckEntry));
 
-  if (normalized === 'dubai') return 'dubai';
-  if (normalized === 'freezone' || normalized === 'free_zone' || normalized === 'free zone') return 'freeZone';
+  return originIndex >= 0 ? workflowStops.slice(originIndex) : workflowStops;
+};
+const getNextRouteStop = (stop) => {
+  const index = workflowStops.indexOf(stop);
 
-  return null;
+  return index >= 0 && index < workflowStops.length - 1 ? workflowStops[index + 1] : null;
 };
 
 const validateRequiredFields = (body) => {
@@ -62,6 +73,14 @@ const validateRequiredFields = (body) => {
     return 'truckModel must be either threeAxis or sixAxis';
   }
 
+  if (!normalizeDestination(body.destination)) {
+    return 'destination must be either dubai or freeZone';
+  }
+
+  if (!isValidOriginStop(normalizeOriginStop(body.originStop))) {
+    return 'originStop must be either yard or gate';
+  }
+
   return null;
 };
 
@@ -71,7 +90,7 @@ const hasUpdate = (truckEntry, stop, status) =>
   truckEntry.updates.some((update) => normalizeText(update.stop) === stop && normalizeText(update.status) === status);
 
 const getWorkflowState = (truckEntry) => {
-  for (const stop of workflowStops) {
+  for (const stop of getWorkflowStops(truckEntry)) {
     const entryCompleted = hasUpdate(truckEntry, stop, 'entry');
     const exitCompleted = hasUpdate(truckEntry, stop, 'exit');
 
@@ -111,9 +130,10 @@ const getWorkflowState = (truckEntry) => {
 const serializeTruckEntry = (truckEntry) => {
   const entry = truckEntry.toObject ? truckEntry.toObject() : truckEntry;
   const updates = entry.updates.map((update) => {
+    const { destination, ...serializedUpdate } = update;
     const selectedAt = formatSelectedLocalDateTime(update.updatedAt);
     return {
-      ...update,
+      ...serializedUpdate,
       updatedAt: selectedAt,
       crossedAt: selectedAt,
       ...(normalizeText(update.status) === 'entry' ? { entryAt: selectedAt } : {}),
@@ -124,24 +144,72 @@ const serializeTruckEntry = (truckEntry) => {
     (update) => normalizeText(update.stop) === 'yard' && normalizeText(update.status) === 'entry'
   );
   const latestExit = [...updates].reverse().find((update) => normalizeText(update.status) === 'exit');
+  const workflowState = getWorkflowState(entry);
+  const latestUpdate = [...updates].reverse()[0] || null;
+  const latestStop = normalizeText(latestUpdate?.stop) || null;
+  const latestStatus = normalizeText(latestUpdate?.status) || null;
+  const currentStatus = workflowState.workflowStatus === 'completed' ? 'completed' : latestStatus;
+  const nextStop = workflowState.workflowStatus === 'completed' ? null : getNextRouteStop(latestStop);
 
   return {
     ...entry,
     id: entry._id,
+    destination: normalizeDestination(entry.destination),
+    originStop: getOriginStop(entry),
     updates,
     ...(yardEntry ? { entryAt: yardEntry.updatedAt } : {}),
     ...(latestExit ? { exitAt: latestExit.updatedAt } : {}),
-    ...getWorkflowState(entry),
+    ...workflowState,
+    currentStop: latestStop,
+    currentStatus,
+    nextStop,
   };
 };
 
-const hasOpenYardEntry = async (headTruckNumber, tailTrailerNumber) => {
-  const entries = await TruckEntry.find({
+const getEntriesForTruck = (headTruckNumber, tailTrailerNumber) =>
+  TruckEntry.find({
     headTruckNumber,
     tailTrailerNumber,
   }).sort('-createdAt');
 
-  return entries.some((entry) => getWorkflowState(entry).workflowStatus !== 'completed');
+const hasOpenTruckEntry = (entries) => entries.some((entry) => getWorkflowState(entry).workflowStatus !== 'completed');
+
+const validateOriginCycle = (originStop, latestCompletedEntry) => {
+  const latestDestination = normalizeDestination(latestCompletedEntry?.destination);
+
+  if (originStop === 'gate' && latestDestination !== 'freeZone') {
+    return 'Gate-origin entry requires the latest completed cycle destination to be freeZone';
+  }
+
+  if (originStop === 'yard' && latestCompletedEntry && latestDestination !== 'dubai') {
+    return 'Yard-origin entry requires the latest completed cycle destination to be dubai';
+  }
+
+  return null;
+};
+
+const getRequiredOriginStopForDestination = (destination) => {
+  const normalizedDestination = normalizeDestination(destination);
+
+  if (normalizedDestination === 'freeZone') return 'gate';
+  if (normalizedDestination === 'dubai') return 'yard';
+
+  return null;
+};
+
+const resolveOriginStopForDestination = (destination, submittedOriginStop) => {
+  const requiredOriginStop = getRequiredOriginStopForDestination(destination);
+  const normalizedOriginStop = normalizeOriginStop(submittedOriginStop);
+
+  if (requiredOriginStop === 'gate' && normalizedOriginStop !== undefined && normalizedOriginStop !== 'gate') {
+    return { error: { status: 400, message: 'Free Zone trucks must start from Gate entry' } };
+  }
+
+  if (requiredOriginStop === 'yard' && normalizedOriginStop !== undefined && normalizedOriginStop !== 'yard') {
+    return { error: { status: 400, message: 'Dubai trucks must start from Yard entry' } };
+  }
+
+  return { originStop: requiredOriginStop };
 };
 
 const createTruckEntry = async (req, res, next) => {
@@ -162,10 +230,19 @@ const createTruckEntry = async (req, res, next) => {
 
     const headTruckNumber = normalizeUpper(body.headTruckNumber);
     const tailTrailerNumber = normalizeUpper(body.tailTrailerNumber);
-    const duplicateOpenEntry = await hasOpenYardEntry(headTruckNumber, tailTrailerNumber);
+    const destination = normalizeDestination(body.destination);
+    const originStopUpdate = resolveOriginStopForDestination(destination, body.originStop);
+
+    if (originStopUpdate.error) {
+      return res.status(originStopUpdate.error.status).json({ success: false, message: originStopUpdate.error.message });
+    }
+
+    const originStop = originStopUpdate.originStop;
+    const existingEntries = await getEntriesForTruck(headTruckNumber, tailTrailerNumber);
+    const duplicateOpenEntry = hasOpenTruckEntry(existingEntries);
 
     if (duplicateOpenEntry) {
-      return res.status(409).json({ success: false, message: 'Duplicate active yard entry already exists' });
+      return res.status(409).json({ success: false, message: 'Duplicate active truck entry already exists' });
     }
 
     const entryAt = body.entryAt ? parseSelectedLocalDateTime(body.entryAt) : selectedLocalDateTimeFromDate(new Date());
@@ -187,9 +264,11 @@ const createTruckEntry = async (req, res, next) => {
       driverMobile: body.driverMobile.trim(),
       driverTdCardNumber: body.driverTdCardNumber.trim(),
       truckModel: body.truckModel,
+      destination,
+      originStop,
       updates: [
         {
-          stop: 'yard',
+          stop: originStop,
           status: 'entry',
           updatedAt: entryAt,
           teamName: getTeamName(req.user),
@@ -268,9 +347,33 @@ const validateWorkflowUpdate = (truckEntry, userRole, action) => {
   return null;
 };
 
+const resolveEntryDestinationUpdate = (truckEntry, body = {}) => {
+  const existingDestination = normalizeDestination(truckEntry.destination);
+  const submittedDestination =
+    body.destination === undefined ? existingDestination : normalizeDestination(body.destination);
+
+  if (!submittedDestination) {
+    return {
+      error: { status: 400, message: 'Dubai or Free Zone destination is required' },
+    };
+  }
+
+  if (existingDestination && submittedDestination !== existingDestination) {
+    return {
+      error: { status: 400, message: 'destination cannot be updated here' },
+    };
+  }
+
+  return { destination: submittedDestination };
+};
+
 const appendWorkflowUpdate = async (req, res, next, action) => {
   try {
     const body = req.body || {};
+
+    if (body.destination !== undefined && action !== 'entry') {
+      return res.status(400).json({ success: false, message: 'destination cannot be updated here' });
+    }
 
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ success: false, message: 'Truck entry not found' });
@@ -278,6 +381,20 @@ const appendWorkflowUpdate = async (req, res, next, action) => {
 
     const truckEntry = await TruckEntry.findById(req.params.id);
     if (!truckEntry) return res.status(404).json({ success: false, message: 'Truck entry not found' });
+
+    if (action === 'entry') {
+      const destinationUpdate = resolveEntryDestinationUpdate(truckEntry, body);
+
+      if (destinationUpdate.error) {
+        return res
+          .status(destinationUpdate.error.status)
+          .json({ success: false, message: destinationUpdate.error.message });
+      }
+
+      if (truckEntry.destination !== destinationUpdate.destination) {
+        truckEntry.destination = destinationUpdate.destination;
+      }
+    }
 
     const workflowError = validateWorkflowUpdate(truckEntry, req.user.role, action);
 
@@ -298,16 +415,6 @@ const appendWorkflowUpdate = async (req, res, next, action) => {
       return res.status(400).json({ success: false, message: 'remarks must be a string' });
     }
 
-    const destination = normalizeDubaiDestination(body.destination);
-
-    if (req.user.role === 'dubai' && action === 'entry' && !destination) {
-      return res.status(400).json({ success: false, message: 'Dubai or Free Zone destination is required' });
-    }
-
-    if (req.user.role !== 'dubai' && body.destination !== undefined) {
-      return res.status(400).json({ success: false, message: 'Destination is allowed only for Dubai updates' });
-    }
-
     truckEntry.updates.push({
       stop: req.user.role,
       status: action,
@@ -315,7 +422,6 @@ const appendWorkflowUpdate = async (req, res, next, action) => {
       teamName: getTeamName(req.user),
       memberName: req.user.name,
       remarks: typeof body.remarks === 'string' ? body.remarks.trim() : undefined,
-      destination,
     });
 
     await truckEntry.save();
@@ -340,4 +446,9 @@ module.exports = {
   getTruckEntryById,
   markTeamEntry,
   markTeamExit,
+  getWorkflowState,
+  resolveEntryDestinationUpdate,
+  serializeTruckEntry,
+  validateOriginCycle,
+  resolveOriginStopForDestination,
 };
